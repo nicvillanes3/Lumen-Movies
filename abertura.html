@@ -1,0 +1,676 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#08090D">
+    <title>LUMEN — Abertura</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg: #08090D;
+            --gold: #C9A96E;
+            --white: #F5F3EF;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--white);
+            font-family: 'Jost', sans-serif;
+            overflow: hidden;
+        }
+
+        #stage {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            background: var(--bg);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .skip {
+            position: fixed;
+            z-index: 5;
+            top: 22px;
+            right: 22px;
+            padding: 11px 17px;
+            border: 1px solid var(--gold);
+            color: var(--white);
+            background: rgba(8, 9, 13, .7);
+            text-decoration: none;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 2px;
+            transition: .3s;
+        }
+
+        .skip:hover {
+            background: var(--gold);
+            color: var(--bg);
+        }
+
+        #overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 17px;
+            background: rgba(8, 9, 13, .78);
+            text-align: center;
+            padding: 24px;
+            transition: opacity .7s;
+        }
+
+        #overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .small-title {
+            color: var(--gold);
+            font-size: 10px;
+            letter-spacing: 5px;
+            text-transform: uppercase;
+        }
+
+        #start {
+            padding: 17px 27px;
+            background: transparent;
+            color: var(--white);
+            border: 1px solid var(--gold);
+            font-family: inherit;
+            font-size: 13px;
+            letter-spacing: 4px;
+            cursor: pointer;
+            transition: .3s;
+        }
+
+        #start:hover {
+            color: var(--bg);
+            background: var(--gold);
+        }
+
+        #status {
+            font-size: 10px;
+            color: rgba(245, 243, 239, .55);
+            letter-spacing: 2px;
+        }
+
+        @media (max-width: 600px) {
+            .skip {
+                top: 14px;
+                right: 14px;
+                font-size: 9px;
+                padding: 9px 12px;
+            }
+
+            #start {
+                font-size: 11px;
+                letter-spacing: 3px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #overlay {
+                transition: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="stage">
+    <canvas id="scene"></canvas>
+</div>
+
+<a class="skip" id="skip" href="index.php">Pular abertura ↗</a>
+
+<div id="overlay">
+    <span class="small-title">Uma nova experiência começa</span>
+    <button id="start">▶ &nbsp; ASSISTIR À ABERTURA</button>
+    <span id="status">ATIVE O SOM · APROXIMADAMENTE 20 SEGUNDOS</span>
+</div>
+
+<script>
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startButton = document.getElementById('start');
+const skipButton = document.getElementById('skip');
+
+let width = 0;
+let height = 0;
+let running = false;
+let startedAt = 0;
+let animationFrame = 0;
+let audioContext = null;
+
+const GOLD = '#C9A96E';
+const WHITE = '#F5F3EF';
+const BG = '#08090D';
+const DURATION = 20;
+
+function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    width = window.innerWidth;
+    height = window.innerHeight;
+
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    if (!running) {
+        draw(0);
+    }
+}
+
+function clamp(value, min = 0, max = 1) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function smooth(value) {
+    value = clamp(value);
+    return value * value * (3 - 2 * value);
+}
+
+function fadeIn(t, start, end) {
+    return smooth((t - start) / (end - start));
+}
+
+function fadeOut(t, start, end) {
+    return 1 - fadeIn(t, start, end);
+}
+
+function glow(x, y, radius, opacity) {
+    const gradient = ctx.createRadialGradient(
+        x, y, 0,
+        x, y, radius
+    );
+
+    gradient.addColorStop(
+        0,
+        `rgba(201,169,110,${opacity})`
+    );
+
+    gradient.addColorStop(
+        1,
+        'rgba(201,169,110,0)'
+    );
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(
+        x - radius,
+        y - radius,
+        radius * 2,
+        radius * 2
+    );
+}
+
+function roundedRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+}
+
+function drawBackground(t) {
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, width, height);
+
+    const centerX = width / 2;
+    const centerY = height * .43;
+
+    const glowStrength =
+        .25 + .25 * Math.sin(t * .8);
+
+    glow(
+        centerX,
+        centerY,
+        Math.max(width, height) * .65,
+        glowStrength
+    );
+
+    const gradient = ctx.createLinearGradient(
+        0, height * .5,
+        0, height
+    );
+
+    gradient.addColorStop(0, 'rgba(201,169,110,0)');
+    gradient.addColorStop(1, 'rgba(201,169,110,.09)');
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, height * .5, width, height * .5);
+}
+
+function drawParticles(t) {
+    const count = 65;
+
+    for (let i = 0; i < count; i++) {
+        const seed = i * 137.5;
+        const x = (
+            seed + Math.sin(t * .15 + i) * 35
+        ) % width;
+
+        const y = (
+            height - ((t * 13 + i * 47) % (height + 50))
+        );
+
+        const opacity =
+            .15 + .45 * Math.abs(Math.sin(t + i));
+
+        ctx.fillStyle = `rgba(201,169,110,${opacity})`;
+        ctx.beginPath();
+        ctx.arc(
+            (x + width) % width,
+            y,
+            1 + (i % 3) * .35,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+    }
+}
+
+function drawLight(t) {
+    const centerX = width / 2;
+    const centerY = height * .43;
+    const entrance = fadeIn(t, 1, 4);
+    const exit = fadeOut(t, 10, 13);
+    const opacity = entrance * exit;
+
+    ctx.save();
+    ctx.globalAlpha = opacity;
+
+    const radius = Math.min(width, height) * .15;
+
+    glow(
+        centerX,
+        centerY,
+        radius * 3.5,
+        .8
+    );
+
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = 25;
+
+    ctx.beginPath();
+    ctx.ellipse(
+        centerX,
+        centerY,
+        radius * (1 + .05 * Math.sin(t * 2)),
+        radius * 1.35,
+        0,
+        0,
+        Math.PI * 2
+    );
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = WHITE;
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 5 + Math.sin(t * 2) * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+}
+
+function drawCharacter(t) {
+    const entrance = fadeIn(t, 3, 5);
+    const exit = fadeOut(t, 9.5, 12);
+    const opacity = entrance * exit;
+
+    if (opacity <= 0) return;
+
+    const cx = width / 2;
+    const cy = height * .63;
+    const scale = Math.min(width / 900, height / 600, 1.25);
+
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+
+    ctx.fillStyle = '#090A0E';
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = 28;
+
+    ctx.beginPath();
+    ctx.ellipse(0, 25, 100, 125, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+
+    const coat = ctx.createLinearGradient(-75, 0, 75, 0);
+    coat.addColorStop(0, '#151720');
+    coat.addColorStop(.5, '#28231D');
+    coat.addColorStop(1, '#090A0E');
+
+    ctx.fillStyle = coat;
+    ctx.beginPath();
+    ctx.moveTo(-32, -8);
+    ctx.lineTo(-95, 165);
+    ctx.quadraticCurveTo(0, 205, 95, 165);
+    ctx.lineTo(32, -8);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#08090D';
+    ctx.beginPath();
+    ctx.ellipse(0, -45, 34, 43, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const face = ctx.createLinearGradient(-30, 0, 30, 0);
+    face.addColorStop(0, '#705532');
+    face.addColorStop(.5, '#C9A96E');
+    face.addColorStop(1, '#4A3822');
+
+    ctx.fillStyle = face;
+    ctx.beginPath();
+    ctx.ellipse(0, -48, 23, 31, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#08090D';
+    ctx.beginPath();
+    ctx.ellipse(0, -75, 31, 19, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillRect(-31, -76, 62, 8);
+
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-25, 2);
+    ctx.lineTo(0, 52);
+    ctx.lineTo(25, 2);
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+const titles = [
+    { name: 'A COROA DE LUZ', type: 'SÉRIE' },
+    { name: 'PROTOCOLO ÂMBAR', type: 'FILME' },
+    { name: 'CHUVA DE OURO', type: 'SÉRIE' },
+    { name: 'PIPO & ZUZU', type: 'FILME' },
+    { name: 'A PORTA 13', type: 'SÉRIE' }
+];
+
+function drawCards(t) {
+    const entrance = fadeIn(t, 5, 6);
+    const exit = fadeOut(t, 11, 13);
+    const opacity = entrance * exit;
+
+    if (opacity <= 0) return;
+
+    const cardW = Math.min(145, width * .23);
+    const cardH = cardW * 1.48;
+    const gap = Math.min(22, width * .025);
+    const total = cardW * 5 + gap * 4;
+    const scale = Math.min(1, (width - 28) / total);
+    const w = cardW * scale;
+    const h = cardH * scale;
+    const g = gap * scale;
+    const startX = (width - (w * 5 + g * 4)) / 2;
+
+    titles.forEach((item, i) => {
+        const delay = i * .13;
+        const reveal = fadeIn(t, 5.3 + delay, 6.5 + delay);
+        const x = startX + i * (w + g);
+        const y = height * .43 + (1 - reveal) * 70;
+        const center = x + w / 2;
+
+        ctx.save();
+        ctx.globalAlpha = opacity * reveal;
+
+        ctx.shadowColor = 'rgba(201,169,110,.4)';
+        ctx.shadowBlur = 22;
+
+        const gradient = ctx.createLinearGradient(x, y, x + w, y + h);
+        gradient.addColorStop(0, i % 2 ? '#171A22' : '#6B5732');
+        gradient.addColorStop(.5, '#292319');
+        gradient.addColorStop(1, '#08090D');
+
+        ctx.fillStyle = gradient;
+        roundedRect(x, y, w, h, 3);
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+
+        glow(center, y + h * .3, w * .7, .45);
+
+        ctx.strokeStyle = GOLD;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, w, h);
+
+        ctx.strokeStyle = 'rgba(201,169,110,.4)';
+        ctx.beginPath();
+        ctx.arc(center, y + h * .34, w * .23, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = GOLD;
+        ctx.fillRect(center - w * .15, y + h * .54, w * .3, 1);
+
+        ctx.fillStyle = WHITE;
+        ctx.textAlign = 'center';
+        ctx.font = `400 ${Math.max(7, w * .065)}px Jost`;
+        ctx.fillText(item.name, center, y + h * .75, w * .85);
+
+        ctx.fillStyle = GOLD;
+        ctx.font = `300 ${Math.max(6, w * .05)}px Jost`;
+        ctx.fillText(item.type, center, y + h * .83);
+
+        ctx.restore();
+    });
+}
+
+function drawLogo(t) {
+    const entrance = fadeIn(t, 12, 14);
+    const exit = fadeOut(t, 18, 19.5);
+    const opacity = entrance * exit;
+
+    if (opacity <= 0) return;
+
+    const size = Math.min(width * .14, height * .17, 145);
+
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `300 ${size}px Jost`;
+
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = 30;
+    ctx.fillStyle = WHITE;
+    ctx.fillText('LUMEN', width / 2, height * .47);
+
+    ctx.shadowBlur = 0;
+
+    const metrics = ctx.measureText('LUMEN');
+    const lineW = Math.min(metrics.width, width * .55);
+
+    ctx.fillStyle = GOLD;
+    ctx.fillRect(
+        width / 2 - lineW / 2,
+        height * .47 + size * .65,
+        lineW,
+        1
+    );
+
+    ctx.font = `300 ${Math.max(10, size * .12)}px Jost`;
+    ctx.letterSpacing = '4px';
+    ctx.fillStyle = WHITE;
+    ctx.fillText(
+        'ONDE A LUZ ENCONTRA AS HISTÓRIAS',
+        width / 2,
+        height * .47 + size * .95,
+        width * .9
+    );
+
+    ctx.font = `400 ${Math.max(8, size * .1)}px Jost`;
+    ctx.letterSpacing = '3px';
+    ctx.fillStyle = GOLD;
+    ctx.fillText(
+        'CINEMA · SÉRIES · EXPERIÊNCIAS',
+        width / 2,
+        height * .47 + size * 1.3,
+        width * .9
+    );
+
+    ctx.restore();
+}
+
+function draw(t) {
+    ctx.clearRect(0, 0, width, height);
+
+    drawBackground(t);
+    drawParticles(t);
+    drawLight(t);
+    drawCharacter(t);
+    drawCards(t);
+    drawLogo(t);
+
+    const flash = fadeIn(t, 18.7, 19.2);
+
+    if (flash > 0) {
+        ctx.fillStyle = `rgba(245,243,239,${flash * .8})`;
+        ctx.fillRect(0, 0, width, height);
+    }
+}
+
+function playSound() {
+    try {
+        audioContext = new (
+            window.AudioContext || window.webkitAudioContext
+        )();
+
+        const master = audioContext.createGain();
+        master.gain.value = .18;
+        master.connect(audioContext.destination);
+
+        const now = audioContext.currentTime;
+
+        function note(frequency, start, duration, volume) {
+            const oscillator = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+
+            oscillator.type = 'sine';
+            oscillator.frequency.value = frequency;
+
+            gain.gain.setValueAtTime(0, now + start);
+            gain.gain.linearRampToValueAtTime(
+                volume,
+                now + start + .15
+            );
+            gain.gain.exponentialRampToValueAtTime(
+                .001,
+                now + start + duration
+            );
+
+            oscillator.connect(gain);
+            gain.connect(master);
+
+            oscillator.start(now + start);
+            oscillator.stop(now + start + duration);
+        }
+
+        note(55, 0, 8, .8);
+        note(110, 0, 8, .35);
+        note(220, 1, 5, .12);
+        note(329.63, 5, 3, .16);
+        note(440, 6, 3, .16);
+        note(523.25, 7, 4, .18);
+        note(659.25, 12, 4, .18);
+        note(783.99, 13, 4, .15);
+        note(1046.5, 14, 4, .12);
+        note(523.25, 17, 2, .12);
+    } catch (error) {
+        console.log('O áudio não está disponível neste navegador.');
+    }
+}
+
+function animate(now) {
+    if (!running) return;
+
+    const elapsed = (now - startedAt) / 1000;
+
+    draw(Math.min(elapsed, DURATION));
+
+    if (elapsed >= DURATION) {
+        goToCatalog();
+        return;
+    }
+
+    animationFrame = requestAnimationFrame(animate);
+}
+
+function goToCatalog() {
+    running = false;
+    cancelAnimationFrame(animationFrame);
+    window.location.replace('index.php');
+}
+
+startButton.addEventListener('click', async () => {
+    if (running) return;
+
+    try {
+        await document.fonts.ready;
+
+        if (audioContext && audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+    } catch (error) {
+        console.log('Continuando sem áudio.');
+    }
+
+    overlay.classList.add('hidden');
+
+    playSound();
+
+    running = true;
+    startedAt = performance.now();
+
+    cancelAnimationFrame(animationFrame);
+    animationFrame = requestAnimationFrame(animate);
+});
+
+skipButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    goToCatalog();
+});
+
+window.addEventListener('resize', resize);
+
+resize();
+</script>
+
+</body>
+</html>
