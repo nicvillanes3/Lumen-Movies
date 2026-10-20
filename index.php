@@ -1,6 +1,12 @@
 <?php
 require 'config.php';
 
+// Se o cookie 'viu_abertura' não existir, redireciona para a abertura
+if (!isset($_COOKIE['viu_abertura'])) {
+    header('Location: abertura.php');
+    exit;
+}
+
 // Tenta buscar filmes em alta da API do TMDB
 $tmdbConteudos = [];
 $apiUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/tmdb_api.php?action=popular';
